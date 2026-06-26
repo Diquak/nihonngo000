@@ -90,6 +90,16 @@
     border-radius:999px;background:#fff;cursor:pointer;box-shadow:2px 2px 0 var(--ink);}
   .reset:active{transform:translate(2px,2px);box-shadow:none;}
 
+  .cat-hdr{grid-column:1/-1;display:flex;align-items:center;gap:8px;padding:9px 14px;
+    font-weight:900;font-size:14px;border:2.5px solid var(--ink);border-radius:14px;
+    box-shadow:3px 3px 0 var(--ink);position:relative;z-index:1;}
+  .cat-hdr .chc{font-size:22px;}
+  .cat-hdr .chn{font-size:11px;margin-left:auto;background:var(--ink);color:#fff;
+    border-radius:999px;padding:2px 9px;font-weight:900;}
+  .filter-clear{font-family:inherit;font-size:11px;font-weight:900;padding:3px 10px;
+    border:2px solid var(--ink);border-radius:999px;background:#fff;cursor:pointer;
+    box-shadow:2px 2px 0 var(--ink);margin-left:6px;}
+  .filter-clear:active{transform:translate(1px,1px);box-shadow:none;}
   .grid{position:relative; z-index:1; display:grid; gap:13px;
     grid-template-columns:repeat(auto-fill,minmax(150px,1fr));}
   .card{perspective:1000px; height:200px; cursor:pointer;}
@@ -792,13 +802,24 @@ const io=new IntersectionObserver((ents)=>{
 },{threshold:.4});
 
 // Delegated chip listener — set once, survives chipBox innerHTML resets
+// Exclusive single-select: one tap = show only that category, tap again = show all
 chipBox.addEventListener('click', e=>{
   const btn=e.target.closest('button.chip'); if(!btn) return;
   const cat=btn.dataset.cat;
-  if(cat==='__all__') activeCats.clear();
-  else activeCats.has(cat)?activeCats.delete(cat):activeCats.add(cat);
+  if(cat==='__all__'){
+    activeCats.clear();
+  } else if(activeCats.size===1 && activeCats.has(cat)){
+    activeCats.clear(); // tap active chip again → deselect
+  } else {
+    activeCats.clear();
+    activeCats.add(cat);
+  }
   buildChips(); renderGrid();
-  setTimeout(()=>grid.scrollIntoView({behavior:'smooth',block:'start'}),60);
+  setTimeout(()=>{
+    const target=grid.querySelector('.cat-hdr')||grid;
+    const top=target.getBoundingClientRect().top+window.pageYOffset-14;
+    window.scrollTo(0, top);
+  }, 50);
 });
 
 const VOCAB_EMOJIS = {
@@ -838,53 +859,71 @@ function buildChips(){
 function galleryList(){
   return activeCats.size===0 ? ALL_DATA : ALL_DATA.filter(d=>activeCats.has(d.cat));
 }
+function makeCard(d){
+  const card=document.createElement('div'); card.className='card'; card.dataset.id=d.id;
+  const meta=catMeta(d.cat);
+  const vpool=VOCAB_EMOJIS[d.cat]; const vEmoji=vpool?vpool[d.id%vpool.length]:meta.i;
+  const faceE = d.isO
+    ? `<span class="e" data-anim="${d.anim}">${d.emoji}</span>`
+    : `<span class="e txt">${vEmoji}</span>`;
+  const krFront = (d.isO || d.w===d.r) ? '' : `<div class="kr jp">${d.r}</div>`;
+  const beBack = d.isO ? `<div class="be">${d.emoji}</div>` : `<div class="bp">${d.p||''}</div>`;
+  const synBack = d.syn ? `<div class="bsyn">≒ ${d.syn}</div>` : '';
+  const zBack = d.ez ? `<div class="bz">${d.ez}</div>` : '';
+  const xBack = d.ej ? `<div class="bx jp">${d.ej}</div>` : '';
+  card.innerHTML=`
+    <div class="inner">
+      <div class="face front">
+        <span class="cat-dot" style="background:${meta.c}"></span>
+        <span class="pin">${meta.i}</span>
+        <span class="errbadge"></span>
+        ${faceE}
+        <div class="k jp">${d.w}</div>
+        ${krFront}
+        <div class="m">${d.m}</div>
+        <div class="tapme">tap で例文 ↻</div>
+      </div>
+      <div class="face back">
+        ${beBack}
+        <div class="bk jp">${d.w}${(!d.isO&&d.w!==d.r)?` <span style="font-size:12px;opacity:.55">（${d.r}）</span>`:''}</div>
+        ${xBack}
+        ${zBack}
+        ${synBack}
+        <div class="flag">↻ tap でもどる</div>
+      </div>
+    </div>`;
+  const emo=card.querySelector('.front .e');
+  card.addEventListener('click',()=>{
+    card.classList.toggle('flip');
+    if(!card.classList.contains('flip')) perform(emo,false);
+  });
+  if(!('ontouchstart' in window)){
+    card.addEventListener('mouseenter',()=>{ if(!card.classList.contains('flip')) perform(emo,false); });
+  }
+  applyErr(card, wrongCounts[d.id]||0);
+  if(d.isO) io.observe(emo);
+  return card;
+}
 function renderGrid(){
   grid.innerHTML='';
-  galleryList().forEach(d=>{
-    const card=document.createElement('div'); card.className='card'; card.dataset.id=d.id;
-    const meta=catMeta(d.cat);
-    const vpool=VOCAB_EMOJIS[d.cat]; const vEmoji=vpool?vpool[d.id%vpool.length]:meta.i;
-    const faceE = d.isO
-      ? `<span class="e" data-anim="${d.anim}">${d.emoji}</span>`
-      : `<span class="e txt">${vEmoji}</span>`;
-    const krFront = (d.isO || d.w===d.r) ? '' : `<div class="kr jp">${d.r}</div>`;
-    const beBack = d.isO ? `<div class="be">${d.emoji}</div>` : `<div class="bp">${d.p||''}</div>`;
-    const synBack = d.syn ? `<div class="bsyn">≒ ${d.syn}</div>` : '';
-    const zBack = d.ez ? `<div class="bz">${d.ez}</div>` : '';
-    const xBack = d.ej ? `<div class="bx jp">${d.ej}</div>` : '';
-    card.innerHTML=`
-      <div class="inner">
-        <div class="face front">
-          <span class="cat-dot" style="background:${meta.c}"></span>
-          <span class="pin">${meta.i}</span>
-          <span class="errbadge"></span>
-          ${faceE}
-          <div class="k jp">${d.w}</div>
-          ${krFront}
-          <div class="m">${d.m}</div>
-          <div class="tapme">tap で例文 ↻</div>
-        </div>
-        <div class="face back">
-          ${beBack}
-          <div class="bk jp">${d.w}${(!d.isO&&d.w!==d.r)?` <span style="font-size:12px;opacity:.55">（${d.r}）</span>`:''}</div>
-          ${xBack}
-          ${zBack}
-          ${synBack}
-          <div class="flag">↻ tap でもどる</div>
-        </div>
-      </div>`;
-    const emo=card.querySelector('.front .e');
-    card.addEventListener('click',()=>{
-      card.classList.toggle('flip');
-      if(!card.classList.contains('flip')) perform(emo,false);
+  const list=galleryList();
+  if(activeCats.size>0){
+    // Show one category header per selected category, then that category's cards
+    [...activeCats].filter(c=>CAT_ORDER.includes(c)).forEach(cat=>{
+      const items=list.filter(d=>d.cat===cat);
+      if(!items.length) return;
+      const meta=catMeta(cat);
+      const hdr=document.createElement('div');
+      hdr.className='cat-hdr';
+      hdr.style.background=meta.c;
+      hdr.innerHTML=`<span class="chc">${meta.i}</span><b class="jp">${cat}</b><span class="chn">${items.length}件</span><button class="filter-clear jp">全部に戻す ✕</button>`;
+      hdr.querySelector('.filter-clear').onclick=()=>{ activeCats.clear(); buildChips(); renderGrid(); window.scrollTo(0,0); };
+      grid.appendChild(hdr);
+      items.forEach(d=>grid.appendChild(makeCard(d)));
     });
-    if(!('ontouchstart' in window)){
-      card.addEventListener('mouseenter',()=>{ if(!card.classList.contains('flip')) perform(emo,false); });
-    }
-    applyErr(card, wrongCounts[d.id]||0);
-    grid.appendChild(card);
-    if(d.isO) io.observe(emo);
-  });
+  } else {
+    list.forEach(d=>grid.appendChild(makeCard(d)));
+  }
 }
 
 // ---------- feature ----------
