@@ -791,20 +791,47 @@ const io=new IntersectionObserver((ents)=>{
   ents.forEach(e=>{ if(e.isIntersecting){ perform(e.target,false); io.unobserve(e.target);} });
 },{threshold:.4});
 
+// Delegated chip listener — set once, survives chipBox innerHTML resets
+chipBox.addEventListener('click', e=>{
+  const btn=e.target.closest('button.chip'); if(!btn) return;
+  const cat=btn.dataset.cat;
+  if(cat==='__all__') activeCats.clear();
+  else activeCats.has(cat)?activeCats.delete(cat):activeCats.add(cat);
+  buildChips(); renderGrid();
+  setTimeout(()=>grid.scrollIntoView({behavior:'smooth',block:'start'}),60);
+});
+
+const VOCAB_EMOJIS = {
+  "一類形容詞":["🌸","🍀","🌺","🎀","🌼","🌻","🌷","💮","🏵️","🌈"],
+  "二類形容詞":["💜","🔮","🪄","💎","🌙","⭐","🦄","🫧","🪩","💝"],
+  "動詞":["🏃","🦋","🌊","🔥","💨","⚡","🌀","🎯","🦅","🚀"],
+  "複合動詞":["🔗","🧩","🔄","🔧","🛠️","🔑","⚙️","🔨","🪛","🪝"],
+  "名詞":["📦","🏺","🎁","📚","🏠","🌏","🎪","🎠","🧸","🎭"],
+  "副詞・擬態語":["〽️","🎵","🎶","💫","✨","🌟","💥","🎊","🎈","🎉"],
+  "飲食・口":["🍙","🍜","🍱","🍣","🍰","🍵","🥢","🍡","🧁","🍮"],
+  "動作・様子":["🐧","🦆","🐰","🐸","🦊","🐼","🐻","🦔","🐨","🐙"],
+  "感情・心理":["💗","💖","💓","💞","💘","❤️","💛","💚","💙","🧡"],
+  "触感・状態":["🍯","🧈","🌿","🌾","🍃","🌱","🪨","🏔️","🌊","🧊"],
+  "痛覚・感覚":["🌶️","🥵","⚡","🔥","💢","😤","😣","😖","😫","🤯"],
+  "光・音":["✨","🌟","⭐","💫","🌙","🌠","🎆","🎇","🌤️","🌈"],
+  "程度・様態":["📐","📏","⚖️","🎚️","📊","📈","📉","🔢","🧮","📌"],
+  "時間・その他":["⏰","🕐","📅","📆","⌛","⏳","🗓️","🕰️","⏱️","🔔"]
+};
+
 function buildChips(){
   chipBox.innerHTML='';
   const counts={}; ALL_DATA.forEach(d=>counts[d.cat]=(counts[d.cat]||0)+1);
   const all=document.createElement('button');
   all.className='chip'+(activeCats.size===0?' on':'');
   all.innerHTML=`✦ 全部 <span class="n">${ALL_DATA.length}</span>`;
-  all.onclick=()=>{ activeCats.clear(); buildChips(); renderGrid(); };
+  all.dataset.cat='__all__';
   chipBox.appendChild(all);
   CAT_ORDER.forEach(cat=>{
     if(!counts[cat]) return;
     const b=document.createElement('button');
     b.className='chip'+(activeCats.has(cat)?' on':'');
     b.innerHTML=`${catMeta(cat).i} ${cat} <span class="n">${counts[cat]}</span>`;
-    b.onclick=()=>{ activeCats.has(cat)?activeCats.delete(cat):activeCats.add(cat); buildChips(); renderGrid(); };
+    b.dataset.cat=cat;
     chipBox.appendChild(b);
   });
 }
@@ -816,9 +843,10 @@ function renderGrid(){
   galleryList().forEach(d=>{
     const card=document.createElement('div'); card.className='card'; card.dataset.id=d.id;
     const meta=catMeta(d.cat);
+    const vpool=VOCAB_EMOJIS[d.cat]; const vEmoji=vpool?vpool[d.id%vpool.length]:meta.i;
     const faceE = d.isO
       ? `<span class="e" data-anim="${d.anim}">${d.emoji}</span>`
-      : `<span class="e txt">${meta.i}</span>`;
+      : `<span class="e txt">${vEmoji}</span>`;
     const krFront = (d.isO || d.w===d.r) ? '' : `<div class="kr jp">${d.r}</div>`;
     const beBack = d.isO ? `<div class="be">${d.emoji}</div>` : `<div class="bp">${d.p||''}</div>`;
     const synBack = d.syn ? `<div class="bsyn">≒ ${d.syn}</div>` : '';
