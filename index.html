@@ -995,14 +995,95 @@ function findSurface(d){
   return null;
 }
 const GETVAL = { meaning:d=>d.m, cloze:d=>d.w, synonym:d=>d.syn, reading:d=>d.r, kanji:d=>d.w };
+
+// ---- 漢字読み: 似た読み方の選択肢を生成（JLPT風のひっかけ） ----
+const GYOU=[
+  ['あ','い','う','え','お'],['か','き','く','け','こ'],['が','ぎ','ぐ','げ','ご'],
+  ['さ','し','す','せ','そ'],['ざ','じ','ず','ぜ','ぞ'],['た','ち','つ','て','と'],
+  ['だ','ぢ','づ','で','ど'],['な','に','ぬ','ね','の'],['は','ひ','ふ','へ','ほ'],
+  ['ば','び','ぶ','べ','ぼ'],['ぱ','ぴ','ぷ','ぺ','ぽ'],['ま','み','む','め','も'],
+  ['や','','ゆ','','よ'],['ら','り','る','れ','ろ'],['わ','','','','を']
+];
+const VOICE={'か':'が','き':'ぎ','く':'ぐ','け':'げ','こ':'ご','さ':'ざ','し':'じ','す':'ず','せ':'ぜ','そ':'ぞ',
+  'た':'だ','ち':'ぢ','つ':'づ','て':'で','と':'ど','は':'ば','ひ':'び','ふ':'ぶ','へ':'べ','ほ':'ぼ'};
+const HANDA={'は':'ぱ','ひ':'ぴ','ふ':'ぷ','へ':'ぺ','ほ':'ぽ'};
+const UNVOICE={}; for(const k in VOICE) UNVOICE[VOICE[k]]=k;
+const UNHANDA={}; for(const k in HANDA) UNHANDA[HANDA[k]]=k;
+const KVOWEL={}; const VW=['a','i','u','e','o'];
+GYOU.forEach(row=>row.forEach((k,i)=>{ if(k) KVOWEL[k]=VW[i]; }));
+Object.assign(KVOWEL,{'ゃ':'a','ゅ':'u','ょ':'o','ぁ':'a','ぃ':'i','ぅ':'u','ぇ':'e','ぉ':'o'});
+const SMALL='ゃゅょぁぃぅぇぉっ';
+
+function longVowelVariants(r){
+  const out=[]; const c=[...r];
+  for(let i=1;i<c.length;i++){
+    if(c[i]==='う'&&(KVOWEL[c[i-1]]==='o'||KVOWEL[c[i-1]]==='u')) out.push(c.slice(0,i).concat(c.slice(i+1)).join(''));
+    if(c[i]==='い'&&(KVOWEL[c[i-1]]==='i'||KVOWEL[c[i-1]]==='e')) out.push(c.slice(0,i).concat(c.slice(i+1)).join(''));
+  }
+  for(let i=0;i<c.length;i++){
+    const v=KVOWEL[c[i]];
+    if(v==='o'||v==='u') out.push(c.slice(0,i+1).concat('う',c.slice(i+1)).join(''));
+    if(v==='e'||v==='i') out.push(c.slice(0,i+1).concat('い',c.slice(i+1)).join(''));
+  }
+  return out;
+}
+function voiceVariants(r){
+  const out=[]; const c=[...r];
+  for(let i=0;i<c.length;i++){
+    const ch=c[i]; const alts=[];
+    if(VOICE[ch])alts.push(VOICE[ch]); if(HANDA[ch])alts.push(HANDA[ch]);
+    if(UNVOICE[ch])alts.push(UNVOICE[ch]); if(UNHANDA[ch])alts.push(UNHANDA[ch]);
+    alts.forEach(a=>{ const cc=c.slice(); cc[i]=a; out.push(cc.join('')); });
+  }
+  return out;
+}
+function vowelShiftVariants(r){
+  const out=[]; const c=[...r];
+  for(let i=0;i<c.length;i++){
+    if(SMALL.includes(c[i])||(i+1<c.length&&SMALL.includes(c[i+1]))) continue;
+    for(const row of GYOU){ const idx=row.indexOf(c[i]);
+      if(idx>=0){ row.forEach(a=>{ if(a&&a!==c[i]){ const cc=c.slice(); cc[i]=a; out.push(cc.join('')); } }); break; } }
+  }
+  return out;
+}
+function tsuVariants(r){
+  const out=[]; const c=[...r];
+  for(let i=0;i<c.length;i++) if(c[i]==='っ') out.push(c.slice(0,i).concat(c.slice(i+1)).join(''));
+  const ok='かきくけこさしすせそたちつてとぱぴぷぺぽ';
+  for(let i=1;i<c.length;i++) if(ok.includes(c[i])&&c[i-1]!=='っ'&&c[i-1]!=='ん') out.push(c.slice(0,i).concat('っ',c.slice(i)).join(''));
+  return out;
+}
+function genReadingDistractors(reading, n){
+  const buckets=[shuffle(longVowelVariants(reading)),shuffle(voiceVariants(reading)),
+    shuffle(tsuVariants(reading)),shuffle(vowelShiftVariants(reading))];
+  const seen=new Set([reading]); const res=[]; let added=true;
+  while(res.length<n&&added){ added=false;
+    for(const b of buckets){
+      while(b.length){ const v=b.shift();
+        if(v&&v!==reading&&!seen.has(v)&&v.length>=1){ seen.add(v); res.push(v); added=true; break; } }
+      if(res.length>=n) break;
+    }
+  }
+  return res;
+}
+
 function getDistractors(type, target, pool, n){
   n=n||3;
+  if(type==='reading'){
+    const res=genReadingDistractors(target.r, n).map(v=>({val:v, word:null}));
+    if(res.length<n){ // 足りなければ他語の読みで補完
+      const seen=new Set([target.r,...res.map(x=>x.val)]);
+      const extra=shuffle(pool.filter(d=>d.id!==target.id&&d.hk&&d.r));
+      for(const d of extra){ if(res.length>=n)break; if(!seen.has(d.r)){seen.add(d.r);res.push({val:d.r,word:d});} }
+    }
+    return res;
+  }
   const getVal=GETVAL[type];
   let cand = shuffle(pool.filter(d=>d.id!==target.id && d.cat===target.cat))
     .concat(shuffle(pool.filter(d=>d.id!==target.id && d.cat!==target.cat)))
     .concat(shuffle(ALL_DATA.filter(d=>d.id!==target.id)));
   if(type==='synonym') cand=cand.filter(d=>d.syn);
-  if(type==='reading'||type==='kanji') cand=cand.filter(d=>d.hk);
+  if(type==='kanji') cand=cand.filter(d=>d.hk);
   const seen=new Set([getVal(target)]); const res=[];
   for(const d of cand){ const v=getVal(d); if(v&&!seen.has(v)){seen.add(v);res.push({val:v,word:d}); if(res.length>=n)break;} }
   return res;
@@ -1034,6 +1115,7 @@ const opts=document.getElementById('opts'), qfb=document.getElementById('qfb'),
       qcard=document.getElementById('qcard'), qprogbar=document.getElementById('qprogbar');
 
 function extFor(type, w){
+  if(!w) return '';
   if(type==='meaning') return `${w.w}${w.w!==w.r?`（${w.r}）`:''}`;
   if(type==='cloze') return `${w.w}：${w.ej||''}`;
   if(type==='synonym') return `${w.w}：${w.m}`;
