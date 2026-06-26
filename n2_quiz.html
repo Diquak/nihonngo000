@@ -81,6 +81,8 @@
   .chip .n{font-size:10.5px; background:var(--ink); color:#fff; border-radius:999px; padding:0 6px; font-weight:900;}
   .chip.on{background:var(--lilac); color:#fff;}
   .chip.on .n{background:#fff; color:var(--ink);}
+  .chip[data-cat="__wrong__"].on{background:#FFD6DB; color:var(--ink);}
+  .chip[data-cat="__wrong__"].on .n{background:var(--red); color:#fff;}
   .chip:active{transform:translateY(2px);}
 
   .errlegend{display:flex; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center;
@@ -795,6 +797,7 @@ function renderLegend(){
 
 // ---------- gallery ----------
 let activeCats = new Set();
+let galleryWrongOnly = false;
 const grid=document.getElementById('grid');
 const chipBox=document.getElementById('chips');
 const io=new IntersectionObserver((ents)=>{
@@ -802,16 +805,18 @@ const io=new IntersectionObserver((ents)=>{
 },{threshold:.4});
 
 // Delegated chip listener — set once, survives chipBox innerHTML resets
-// Exclusive single-select: one tap = show only that category, tap again = show all
 chipBox.addEventListener('click', e=>{
   const btn=e.target.closest('button.chip'); if(!btn) return;
   const cat=btn.dataset.cat;
   if(cat==='__all__'){
-    activeCats.clear();
+    activeCats.clear(); galleryWrongOnly=false;
+  } else if(cat==='__wrong__'){
+    // exclusive with category filter
+    galleryWrongOnly=!galleryWrongOnly; activeCats.clear();
   } else if(activeCats.size===1 && activeCats.has(cat)){
     activeCats.clear(); // tap active chip again → deselect
   } else {
-    activeCats.clear();
+    activeCats.clear(); galleryWrongOnly=false;
     activeCats.add(cat);
   }
   buildChips(); renderGrid();
@@ -842,11 +847,19 @@ const VOCAB_EMOJIS = {
 function buildChips(){
   chipBox.innerHTML='';
   const counts={}; ALL_DATA.forEach(d=>counts[d.cat]=(counts[d.cat]||0)+1);
+  const isAll=activeCats.size===0&&!galleryWrongOnly;
   const all=document.createElement('button');
-  all.className='chip'+(activeCats.size===0?' on':'');
+  all.className='chip'+(isAll?' on':'');
   all.innerHTML=`✦ 全部 <span class="n">${ALL_DATA.length}</span>`;
   all.dataset.cat='__all__';
   chipBox.appendChild(all);
+  // wrong-only chip
+  const wrongN=Object.keys(wrongCounts).filter(k=>wrongCounts[k]>0).length;
+  const wb=document.createElement('button');
+  wb.className='chip'+(galleryWrongOnly?' on':'');
+  wb.innerHTML=`❌ まちがえた語 <span class="n">${wrongN}</span>`;
+  wb.dataset.cat='__wrong__';
+  chipBox.appendChild(wb);
   CAT_ORDER.forEach(cat=>{
     if(!counts[cat]) return;
     const b=document.createElement('button');
@@ -857,7 +870,10 @@ function buildChips(){
   });
 }
 function galleryList(){
-  return activeCats.size===0 ? ALL_DATA : ALL_DATA.filter(d=>activeCats.has(d.cat));
+  let list=ALL_DATA;
+  if(galleryWrongOnly) list=list.filter(d=>wrongCounts[d.id]>0);
+  if(activeCats.size>0) list=list.filter(d=>activeCats.has(d.cat));
+  return list;
 }
 function makeCard(d){
   const card=document.createElement('div'); card.className='card'; card.dataset.id=d.id;
@@ -907,15 +923,20 @@ function makeCard(d){
 function renderGrid(){
   grid.innerHTML='';
   const list=galleryList();
-  if(activeCats.size>0){
-    // Show one category header per selected category, then that category's cards
+  if(galleryWrongOnly && activeCats.size===0){
+    const hdr=document.createElement('div');
+    hdr.className='cat-hdr'; hdr.style.background='#FFD6DB';
+    hdr.innerHTML=`<span class="chc">❌</span><b class="jp">まちがえた語</b><span class="chn">${list.length}件</span><button class="filter-clear jp">全部に戻す ✕</button>`;
+    hdr.querySelector('.filter-clear').onclick=()=>{ galleryWrongOnly=false; buildChips(); renderGrid(); window.scrollTo(0,0); };
+    grid.appendChild(hdr);
+    list.forEach(d=>grid.appendChild(makeCard(d)));
+  } else if(activeCats.size>0){
     [...activeCats].filter(c=>CAT_ORDER.includes(c)).forEach(cat=>{
       const items=list.filter(d=>d.cat===cat);
       if(!items.length) return;
       const meta=catMeta(cat);
       const hdr=document.createElement('div');
-      hdr.className='cat-hdr';
-      hdr.style.background=meta.c;
+      hdr.className='cat-hdr'; hdr.style.background=meta.c;
       hdr.innerHTML=`<span class="chc">${meta.i}</span><b class="jp">${cat}</b><span class="chn">${items.length}件</span><button class="filter-clear jp">全部に戻す ✕</button>`;
       hdr.querySelector('.filter-clear').onclick=()=>{ activeCats.clear(); buildChips(); renderGrid(); window.scrollTo(0,0); };
       grid.appendChild(hdr);
@@ -1137,13 +1158,13 @@ function renderQ(){
   $('qidx').textContent=qi+1; $('qlen').textContent=session.length;
   qprogbar.style.width=(qi/session.length*100)+'%';
   $('qtype').textContent=TYPES[q.type].icon+' '+TYPES[q.type].label;
-  $('qcat').textContent='・'+q.d.cat;
+  $('qcat').textContent='';
   const d=q.d, b=$('qbody'); b.className='qbody jp';
   if(q.type==='meaning'){ b.classList.add('word'); b.innerHTML=`${d.w}<span class="qq">の意味は？</span>`; }
   else if(q.type==='cloze'){ b.classList.add('cloze'); const s=findSurface(d); b.innerHTML=d.ej.replace(s,'<span class="blank">？</span>')+`<span class="qq">？に入る語は？</span>`; }
   else if(q.type==='synonym'){ b.classList.add('word'); b.innerHTML=`${d.w}<span class="qq">に近い意味は？</span>`; }
   else if(q.type==='reading'){ b.classList.add('word'); b.innerHTML=`${d.w}<span class="qq">の読み方は？</span>`; }
-  else if(q.type==='kanji'){ b.classList.add('word'); b.innerHTML=`${d.r}<span class="qq">（${d.m}）の漢字は？</span>`; }
+  else if(q.type==='kanji'){ b.classList.add('word'); b.innerHTML=`${d.r}<span class="qq">の漢字は？</span>`; }
   const correctVal=GETVAL[q.type](d);
   const distract=getDistractors(q.type,d,ALL_DATA,3);
   let entries=[{val:correctVal,word:d,ok:true}].concat(distract.map(x=>({val:x.val,word:x.word,ok:false})));
