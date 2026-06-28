@@ -1053,9 +1053,31 @@ function tsuVariants(r){
   for(let i=1;i<c.length;i++) if(ok.includes(c[i])&&c[i-1]!=='っ'&&c[i-1]!=='ん') out.push(c.slice(0,i).concat('っ',c.slice(i)).join(''));
   return out;
 }
-function genReadingDistractors(reading, n){
-  const buckets=[shuffle(longVowelVariants(reading)),shuffle(voiceVariants(reading)),
-    shuffle(tsuVariants(reading)),shuffle(vowelShiftVariants(reading))];
+const isKana=ch=>/[ぁ-ゖー]/.test(ch);
+// 読みのうち「漢字が担う部分」の範囲を返す（前後の送り仮名を除外）
+function kanjiSpan(w, r){
+  const wc=[...w], rc=[...r];
+  let p=0; while(p<wc.length&&p<rc.length&&isKana(wc[p])&&wc[p]===rc[p]) p++;
+  let i=wc.length-1, j=rc.length-1, s=0;
+  while(i>=p&&j>=p&&isKana(wc[i])&&wc[i]===rc[j]){ i--; j--; s++; }
+  return {start:p, end:rc.length-s};
+}
+// 漢字読み問題として「良問」か？ 漢字が担う読みが送り仮名より長いこと
+function goodReading(d){
+  if(!d.hk||!d.r) return false;
+  const {start,end}=kanjiSpan(d.w, d.r);
+  const hidden=end-start;            // 漢字由来の読みの長さ
+  const okuri=start+(d.r.length-end);// 見えている送り仮名の長さ
+  return hidden>=1 && hidden>=okuri; // 漢字の読みが送り仮名以上（仮名だらけの語を除外）
+}
+function genReadingDistractors(d, n){
+  const reading=d.r;
+  const {start,end}=kanjiSpan(d.w, reading);
+  const rc=[...reading];
+  const pre=rc.slice(0,start).join(''), mid=rc.slice(start,end).join(''), suf=rc.slice(end).join('');
+  const wrap=arr=>arr.map(v=>pre+v+suf);
+  const buckets=[shuffle(wrap(longVowelVariants(mid))),shuffle(wrap(voiceVariants(mid))),
+    shuffle(wrap(tsuVariants(mid))),shuffle(wrap(vowelShiftVariants(mid)))];
   const seen=new Set([reading]); const res=[]; let added=true;
   while(res.length<n&&added){ added=false;
     for(const b of buckets){
@@ -1070,10 +1092,10 @@ function genReadingDistractors(reading, n){
 function getDistractors(type, target, pool, n){
   n=n||3;
   if(type==='reading'){
-    const res=genReadingDistractors(target.r, n).map(v=>({val:v, word:null}));
+    const res=genReadingDistractors(target, n).map(v=>({val:v, word:null}));
     if(res.length<n){ // 足りなければ他語の読みで補完
       const seen=new Set([target.r,...res.map(x=>x.val)]);
-      const extra=shuffle(pool.filter(d=>d.id!==target.id&&d.hk&&d.r));
+      const extra=shuffle(pool.filter(d=>d.id!==target.id&&goodReading(d)));
       for(const d of extra){ if(res.length>=n)break; if(!seen.has(d.r)){seen.add(d.r);res.push({val:d.r,word:d});} }
     }
     return res;
@@ -1093,7 +1115,8 @@ function typePool(type, pool){
   if(type==='meaning') return pool.filter(d=>d.m);
   if(type==='cloze') return pool.filter(d=>d.ej && findSurface(d));
   if(type==='synonym') return pool.filter(d=>d.syn);
-  if(type==='reading'||type==='kanji') return pool.filter(d=>d.hk);
+  if(type==='reading') return pool.filter(goodReading);
+  if(type==='kanji') return pool.filter(d=>d.hk);
   return [];
 }
 function buildSession(){
