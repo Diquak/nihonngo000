@@ -1129,7 +1129,7 @@ function getDistractors(type, target, pool, n){
     .concat(shuffle(pool.filter(d=>d.id!==target.id && d.cat!==target.cat)))
     .concat(shuffle(ALL_DATA.filter(d=>d.id!==target.id)));
   if(type==='synonym') cand=cand.filter(d=>d.syn);
-  if(type==='kanji') cand=cand.filter(d=>d.hk);
+  if(type==='kanji') cand=cand.filter(d=>d.hk && d.r!==target.r); // 同音異字は除外（複数正解防止）
   const seen=new Set([getVal(target)]); const res=[];
   for(const d of cand){ const v=getVal(d); if(v&&!seen.has(v)){seen.add(v);res.push({val:v,word:d}); if(res.length>=n)break;} }
   return res;
@@ -1292,7 +1292,7 @@ function renderQ(){
   else if(q.type==='cloze'){ b.classList.add('cloze'); const s=findSurface(d); b.innerHTML=d.ej.replace(s,'<span class="blank">？</span>')+`<span class="qq">？に入る語は？</span>`; }
   else if(q.type==='synonym'){ b.classList.add('word'); b.innerHTML=`${d.w}<span class="qq">に近い意味は？</span>`; }
   else if(q.type==='reading'){ b.classList.add('word'); b.innerHTML=`${d.w}<span class="qq">の読み方は？</span>`; }
-  else if(q.type==='kanji'){ b.classList.add('word'); b.innerHTML=`${d.r}<span class="qq">の漢字は？</span>`; }
+  else if(q.type==='kanji'){ b.classList.add('word'); b.innerHTML=`${d.r}<span class="qq">（${d.m}）の漢字は？</span>`; }
   const correctVal=GETVAL[q.type](d);
   const distract=getDistractors(q.type,d,ALL_DATA,3);
   let entries=[{val:correctVal,word:d,ok:true}].concat(distract.map(x=>({val:x.val,word:x.word,ok:false})));
